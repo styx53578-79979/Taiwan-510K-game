@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>台灣叫牌找朋友 (5-10-K)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;700;900&display=swap');
+    
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      background-color: #0b2b1a;
+      color: #f3f4f6;
+    }
+
+    /* Felt surface look */
+    .poker-table {
+      background: radial-gradient(circle, #1a5e38 0%, #0d3b22 70%, #061c10 100%);
+      box-shadow: inset 0 0 80px rgba(0,0,0,0.8);
+    }
+
+    /* Custom Card Styling */
+    .poker-card {
+      transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s, border-color 0.2s;
+      aspect-ratio: 57 / 89;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
+    .poker-card:hover {
+      transform: translateY(-16px) scale(1.05);
+      z-index: 80 !important;
+      box-shadow: 0 12px 24px rgba(0,0,0,0.7);
+    }
+
+    .poker-card.selected {
+      transform: translateY(-28px) scale(1.08) !important;
+      border: 3px solid #f59e0b !important;
+      z-index: 90 !important;
+      box-shadow: 0 0 20px rgba(245, 158, 11, 0.9);
+    }
+
+    .poker-card.disabled {
+      filter: brightness(0.6) grayscale(0.3);
+      cursor: not-allowed;
+    }
+    .poker-card.disabled:hover {
+      transform: none !important;
+    }
+
+    /* Smooth scrollbar for game log */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+    }
+
+    /* Hand container with left/right safety padding */
+    .hand-container {
+      display: flex;
+      justify-content: flex-start;
+      align-items: flex-end;
+      width: 100%;
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 16px 36px 20px 36px; /* 36px left padding ensures card 0 is fully visible */
+      overflow-x: auto;
+      overflow-y: visible;
+      scrollbar-width: thin;
+    }
+
+    .suit-spade, .suit-club { color: #0f172a; }
+    .suit-heart, .suit-diamond { color: #dc2626; }
+
+    /* High contrast suit badge styles */
+    .suit-badge-black {
+      background-color: #f8fafc;
+      color: #0f172a;
+      font-weight: 900;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    .suit-badge-red {
+      background-color: #fee2e2;
+      color: #dc2626;
+      font-weight: 900;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col justify-between poker-table">
+
+  <!-- TOP HEADER / STATUS BAR (SOFT TRANSLUCENT & CLEAR SUIT BADGES) -->
+  <header class="w-full bg-slate-900/60 backdrop-blur-md px-3 py-2 border-b border-emerald-500/30 flex justify-between items-center z-30 text-xs sm:text-sm">
+    <div class="flex items-center space-x-3">
+      <span class="font-black text-amber-400 text-base sm:text-lg flex items-center gap-1.5 drop-shadow">
+        <i class="fa-solid fa-crown text-amber-400"></i> 5-10-K 叫牌找朋友
+      </span>
+      <span id="gameModeBadge" class="bg-emerald-950/80 text-emerald-300 font-bold px-2 py-0.5 rounded border border-emerald-600/50 text-xs hidden shadow">
+        --
+      </span>
+    </div>
+
+    <!-- Center Info: High-level Game Info -->
+    <div class="flex items-center gap-3">
+      <div id="trumpDisplay" class="hidden items-center gap-1.5 bg-black/60 px-3 py-1 rounded-full border border-emerald-500/40 shadow">
+        <span class="text-gray-300 font-semibold text-xs">王牌:</span>
+        <span id="trumpSuitIcon" class="text-base font-black px-2 py-0.5 rounded-full"></span>
+      </div>
+      <div id="friendDisplay" class="hidden items-center gap-1.5 bg-black/60 px-3 py-1 rounded-full border border-emerald-500/40 shadow">
+        <span class="text-gray-300 font-semibold text-xs">友牌:</span>
+        <span id="friendCardText" class="font-extrabold text-amber-300"></span>
+      </div>
+      <div id="targetScoreDisplay" class="hidden items-center gap-1.5 bg-black/60 px-3 py-1 rounded-full border border-emerald-500/40 shadow">
+        <span class="text-gray-300 font-semibold text-xs">目標:</span>
+        <span id="targetScoreText" class="font-black text-amber-400">0</span>
+      </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="flex items-center gap-2">
+      <button id="btnLogToggle" onclick="toggleLogModal()" class="bg-emerald-800/50 hover:bg-emerald-700/70 text-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-600/50 transition flex items-center gap-1">
+        <i class="fa-solid fa-list-ul"></i> <span class="hidden sm:inline">紀錄</span>
+      </button>
+      <button id="btnRules" onclick="toggleRulesModal()" class="bg-emerald-800/50 hover:bg-emerald-700/70 text-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-600/50 transition flex items-center gap-1">
+        <i class="fa-solid fa-circle-info"></i> <span class="hidden sm:inline">規則</span>
+      </button>
+      <button onclick="resetGamePrompt()" class="bg-rose-900/50 hover:bg-rose-800/70 text-rose-200 px-2.5 py-1 rounded-lg border border-rose-700/50 transition flex items-center gap-1">
+        <i class="fa-solid fa-rotate-right"></i> <span class="hidden sm:inline">新局</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN PLAY AREA -->
+  <main class="relative flex-1 w-full max-w-6xl mx-auto p-2 flex flex-col justify-between items-center overflow-hidden">
+
+    <!-- NORTH PLAYER (P3) -->
+    <div id="player-2" class="flex flex-col items-center transition-all duration-300 z-10">
+      <div class="avatar-box bg-slate-900/80 border-2 border-slate-700 rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-lg relative">
+        <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-sm shadow">
+          P3
+        </div>
+        <div class="flex flex-col text-left">
+          <div class="flex items-center gap-1">
+            <span class="font-semibold text-xs text-gray-200">電腦 北</span>
+            <span id="role-2" class="text-[10px] bg-amber-500/20 text-amber-300 px-1 rounded border border-amber-500/30 hidden">莊家</span>
+          </div>
+          <div class="text-[11px] text-emerald-400 font-mono flex items-center gap-2">
+            <span>手牌: <b id="cardCount-2">12</b></span>
+            <span>吃分: <b id="score-2" class="text-amber-300">0</b></span>
+          </div>
+        </div>
+        <div id="bidBadge-2" class="hidden absolute -bottom-6 bg-amber-500 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full shadow-md"></div>
+      </div>
+    </div>
+
+    <!-- MIDDLE SECTION: WEST (P2), TABLE CENTER, EAST (P4) -->
+    <div class="w-full flex justify-between items-center px-1 sm:px-6 my-auto">
+
+      <!-- WEST PLAYER (P2) -->
+      <div id="player-1" class="flex flex-col items-center transition-all duration-300 z-10">
+        <div class="avatar-box bg-slate-900/80 border-2 border-slate-700 rounded-xl px-2.5 py-1.5 flex flex-col items-center gap-1 shadow-lg relative min-w-[85px]">
+          <div class="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center font-bold text-white text-sm shadow">
+            P2
+          </div>
+          <span class="font-semibold text-xs text-gray-200">電腦 西</span>
+          <span id="role-1" class="text-[10px] bg-amber-500/20 text-amber-300 px-1 rounded border border-amber-500/30 hidden">莊家</span>
+          <div class="text-[11px] text-emerald-400 font-mono flex flex-col items-center">
+            <span>手牌: <b id="cardCount-1">12</b></span>
+            <span>吃分: <b id="score-1" class="text-amber-300">0</b></span>
+          </div>
+          <div id="bidBadge-1" class="hidden absolute -right-8 bg-amber-500 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full shadow-md"></div>
+        </div>
+      </div>
+
+      <!-- CENTER TABLE ACTION AREA -->
+      <div class="flex-1 max-w-md mx-2 h-44 sm:h-52 rounded-2xl bg-black/20 border border-emerald-500/20 relative flex items-center justify-center shadow-inner">
+        
+        <!-- Bottom / Kitty display (4 cards) -->
+        <div id="kittyArea" class="absolute top-2 flex flex-col items-center z-10">
+          <span class="text-[10px] text-emerald-300/70 mb-0.5 font-semibold tracking-wider">底牌 (4張)</span>
+          <div id="kittyCardsContainer" class="flex gap-1.5">
+            <!-- 4 facedown or faceup cards -->
+          </div>
+        </div>
+
+        <!-- Played Trick Cards Area -->
+        <div id="trickArea" class="w-full h-full relative flex items-center justify-center">
+          <div id="played-0" class="absolute bottom-3 transition-all duration-300 transform scale-90 sm:scale-100"></div>
+          <div id="played-1" class="absolute left-4 transition-all duration-300 transform scale-90 sm:scale-100"></div>
+          <div id="played-2" class="absolute top-3 transition-all duration-300 transform scale-90 sm:scale-100"></div>
+          <div id="played-3" class="absolute right-4 transition-all duration-300 transform scale-90 sm:scale-100"></div>
+        </div>
+
+        <!-- Center Notification Toast -->
+        <div id="centerPrompt" class="absolute bg-slate-900/90 text-amber-300 text-xs sm:text-sm px-4 py-2 rounded-xl border border-amber-500/40 shadow-2xl text-center pointer-events-none transition-all duration-300 hidden z-20">
+          <span id="centerPromptText">請選擇叫牌...</span>
+        </div>
+      </div>
+
+      <!-- EAST PLAYER (P4) -->
+      <div id="player-3" class="flex flex-col items-center transition-all duration-300 z-10">
+        <div class="avatar-box bg-slate-900/80 border-2 border-slate-700 rounded-xl px-2.5 py-1.5 flex flex-col items-center gap-1 shadow-lg relative min-w-[85px]">
+          <div class="w-8 h-8 rounded-full bg-teal-600 flex items-center justify-center font-bold text-white text-sm shadow">
+            P4
+          </div>
+          <span class="font-semibold text-xs text-gray-200">電腦 東</span>
+          <span id="role-3" class="text-[10px] bg-amber-500/20 text-amber-300 px-1 rounded border border-amber-500/30 hidden">莊家</span>
+          <div class="text-[11px] text-emerald-400 font-mono flex flex-col items-center">
+            <span>手牌: <b id="cardCount-3">12</b></span>
+            <span>吃分: <b id="score-3" class="text-amber-300">0</b></span>
+          </div>
+          <div id="bidBadge-3" class="hidden absolute -left-8 bg-amber-500 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full shadow-md"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SOUTH PLAYER (HUMAN P1) INFO & ACTION CONTROL BAR -->
+    <div class="w-full flex flex-col items-center z-20 mb-1">
+      
+      <!-- Interactive Bidding & Game Controls Overlay -->
+      <div id="controlPanel" class="mb-2 bg-slate-900/90 backdrop-blur-md border border-amber-500/40 rounded-2xl p-3 shadow-2xl flex flex-col items-center gap-2 max-w-lg w-full transition-all duration-300">
+        <div id="controlTitle" class="text-xs sm:text-sm font-bold text-amber-400 text-center">
+          準備開始叫牌
+        </div>
+
+        <!-- Bidding Controls -->
+        <div id="biddingControls" class="flex flex-wrap items-center justify-center gap-2 w-full">
+          <div class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-lg border border-slate-700">
+            <span class="text-xs text-gray-300">分數:</span>
+            <select id="bidScoreSelect" class="bg-slate-800 text-amber-300 text-xs sm:text-sm font-bold rounded px-2 py-1 outline-none border border-slate-600 focus:border-amber-400">
+              <option value="60">60 分</option>
+              <option value="65">65 分</option>
+              <option value="70">70 分</option>
+              <option value="75">75 分</option>
+              <option value="80">80 分</option>
+              <option value="85">85 分</option>
+              <option value="90">90 分</option>
+              <option value="95">95 分</option>
+              <option value="100">100 分 (滿分)</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-lg border border-slate-700">
+            <span class="text-xs text-gray-300">玩法:</span>
+            <select id="bidModeSelect" class="bg-slate-800 text-amber-300 text-xs sm:text-sm font-bold rounded px-2 py-1 outline-none border border-slate-600 focus:border-amber-400">
+              <option value="BIG">玩大 (K,10,5=分)</option>
+              <option value="SMALL">玩小 (2,5,10=分)</option>
+            </select>
+          </div>
+
+          <button onclick="handleHumanBid()" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold text-xs sm:text-sm px-4 py-1.5 rounded-lg shadow-md transition transform active:scale-95">
+            叫牌
+          </button>
+          <button onclick="handleHumanPass()" class="bg-slate-700 hover:bg-slate-600 text-gray-200 font-bold text-xs sm:text-sm px-3 py-1.5 rounded-lg transition transform active:scale-95">
+            Pass (放棄)
+          </button>
+        </div>
+
+        <!-- Trump & Friend Selection Controls -->
+        <div id="trumpFriendControls" class="hidden flex-col items-center gap-2.5 w-full">
+          <div class="flex flex-wrap items-center justify-center gap-3">
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs text-gray-300">選擇王牌:</span>
+              <div class="flex gap-1" id="trumpButtons">
+                <button onclick="selectTrump('♠')" class="trump-btn px-2.5 py-1 bg-slate-100 rounded border border-slate-300 hover:border-amber-400 text-base font-black text-slate-950 shadow" data-suit="♠">♠</button>
+                <button onclick="selectTrump('♥')" class="trump-btn px-2.5 py-1 bg-red-100 rounded border border-slate-300 hover:border-amber-400 text-base font-black text-red-600 shadow" data-suit="♥">♥</button>
+                <button onclick="selectTrump('♣')" class="trump-btn px-2.5 py-1 bg-slate-100 rounded border border-slate-300 hover:border-amber-400 text-base font-black text-slate-950 shadow" data-suit="♣">♣</button>
+                <button onclick="selectTrump('♦')" class="trump-btn px-2.5 py-1 bg-red-100 rounded border border-slate-300 hover:border-amber-400 text-base font-black text-red-600 shadow" data-suit="♦">♦</button>
+                <button onclick="selectTrump('NT')" class="trump-btn px-2 py-1 bg-slate-800 rounded border border-slate-600 hover:border-amber-400 text-xs font-bold text-amber-300" data-suit="NT">無王</button>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs text-gray-300">指定友牌:</span>
+              <select id="friendSuitSelect" class="bg-slate-800 text-amber-300 text-xs font-bold rounded px-1.5 py-1 border border-slate-600">
+                <option value="♠">♠ 黑桃</option>
+                <option value="♥">♥ 紅心</option>
+                <option value="♣">♣ 梅花</option>
+                <option value="♦">♦ 方塊</option>
+              </select>
+              <select id="friendRankSelect" class="bg-slate-800 text-amber-300 text-xs font-bold rounded px-1.5 py-1 border border-slate-600">
+                <option value="A">A</option>
+                <option value="K">K</option>
+                <option value="Q">Q</option>
+                <option value="J">J</option>
+                <option value="10">10</option>
+                <option value="9">9</option>
+                <option value="8">8</option>
+                <option value="7">7</option>
+                <option value="6">6</option>
+                <option value="5">5</option>
+                <option value="4">4</option>
+                <option value="3">3</option>
+                <option value="2">2</option>
+              </select>
+            </div>
+          </div>
+
+          <button onclick="confirmTrumpAndFriend()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs sm:text-sm px-5 py-1.5 rounded-lg shadow-md transition transform active:scale-95">
+            確認王牌與朋友
+          </button>
+        </div>
+
+        <!-- Exchange Bottom Cards Controls -->
+        <div id="exchangeControls" class="hidden flex-col items-center gap-2 w-full">
+          <div class="text-xs text-amber-200">
+            請從 16 張牌中選出 <span id="exchangeCountNeeded" class="font-bold text-amber-400">4</span> 張非分數牌埋入底牌。
+          </div>
+          <button id="btnConfirmExchange" onclick="confirmExchange()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm px-5 py-1.5 rounded-lg shadow transition transform active:scale-95">
+            確認蓋底牌
+          </button>
+        </div>
+
+        <!-- Play Card Action Button -->
+        <div id="playControls" class="hidden flex-row items-center justify-center gap-3 w-full">
+          <button id="btnPlaySelectedCard" onclick="playHumanSelectedCard()" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-sm px-6 py-2 rounded-xl shadow-lg transition transform active:scale-95 disabled:opacity-50">
+            出牌 <i class="fa-solid fa-paper-plane ml-1"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Human Player Header Badge -->
+      <div id="player-0" class="flex items-center gap-3 bg-slate-900/80 border border-slate-700/80 px-4 py-1 rounded-t-xl shadow-md z-10">
+        <div class="w-6 h-6 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-black text-xs">
+          你
+        </div>
+        <span class="font-bold text-xs text-gray-200">玩家 (南)</span>
+        <span id="role-0" class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30 hidden">莊家</span>
+        <div class="text-xs text-emerald-400 font-mono flex items-center gap-3">
+          <span>手牌: <b id="cardCount-0">12</b></span>
+          <span>吃分: <b id="score-0" class="text-amber-300">0</b></span>
+        </div>
+        <div id="bidBadge-0" class="hidden bg-amber-500 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full shadow-md"></div>
+      </div>
+
+    </div>
+
+    <!-- HUMAN HAND CARDS DISPLAY CONTAINER -->
+    <div class="w-full relative px-2 pb-2 z-30">
+      <div id="humanHand" class="hand-container min-h-[110px] sm:min-h-[140px] border-t border-emerald-500/20 pt-2">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- LOG MODAL -->
+  <div id="logModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
+      <div class="bg-slate-800 px-4 py-3 border-b border-slate-700 flex justify-between items-center">
+        <h3 class="font-bold text-amber-400 flex items-center gap-2">
+          <i class="fa-solid fa-scroll"></i> 對局歷程與記錄
+        </h3>
+        <button onclick="toggleLogModal()" class="text-gray-400 hover:text-white text-lg font-bold px-2">&times;</button>
+      </div>
+      <div id="gameLogContent" class="p-4 overflow-y-auto custom-scrollbar flex-1 text-xs sm:text-sm font-mono space-y-2 text-gray-300">
+      </div>
+      <div class="bg-slate-800 px-4 py-2 border-t border-slate-700 text-right">
+        <button onclick="toggleLogModal()" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-4 py-1.5 rounded-lg">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RULES MODAL -->
+  <div id="rulesModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+      <div class="bg-slate-800 px-4 py-3 border-b border-slate-700 flex justify-between items-center">
+        <h3 class="font-bold text-amber-400 flex items-center gap-2">
+          <i class="fa-solid fa-book"></i> 台灣 5-10-K (叫牌找朋友) 規則
+        </h3>
+        <button onclick="toggleRulesModal()" class="text-gray-400 hover:text-white text-lg font-bold px-2">&times;</button>
+      </div>
+      <div class="p-4 overflow-y-auto custom-scrollbar text-xs sm:text-sm space-y-3 text-gray-300 leading-relaxed">
+        <p><b class="text-amber-300">1. 發牌與喊分:</b> 4 位玩家各發 12 張牌，留 4 張底牌。玩家先看手牌後叫分（60~100分）並選擇「玩大」或「玩小」。</p>
+        <p><b class="text-amber-300">2. 分數計算:</b>
+          <br>• <b>玩大:</b> K = 10分, 10 = 10分, 5 = 5分 (總分 100 分)。牌大小: A > K > Q > J > 10 > ... > 2。
+          <br>• <b>玩小:</b> 2 = 10分, 5 = 10分, 10 = 5分 (總分 100 分)。牌大小: A > 2 > 3 > 4 > ... > K (A 永遠最大)。
+        </p>
+        <p><b class="text-amber-300">3. 莊家與埋底牌:</b> 喊贏者為莊家，拿走 4 張底牌並重蓋 4 張<b class="text-rose-400">非分數牌</b>（玩大不可埋 5,10,K；玩小不可埋 2,5,10）。非分數牌（如玩大的2、玩小的K）可藏底。</p>
+        <p><b class="text-amber-300">4. 王牌與指定朋友:</b> 莊家指定王牌與朋友牌。若朋友牌在底牌或莊家自己手上，則形成暗獨 (1v3) 心理戰！</p>
+        <p><b class="text-amber-300">5. 出牌規則:</b> 必須跟首出花色；無該花色時可用王牌劫點（截殺）。最大者贏得該墩的分數牌。</p>
+      </div>
+      <div class="bg-slate-800 px-4 py-2 border-t border-slate-700 text-right">
+        <button onclick="toggleRulesModal()" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-4 py-1.5 rounded-lg">我知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUITS = ['♠', '♥', '♣', '♦'];
+    const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+    const PLAYER_NAMES = ['你 (南)', '電腦 (西)', '電腦 (北)', '電腦 (東)'];
+
+    let gameState = {
+      phase: 'BIDDING',
+      gameMode: 'BIG',
+      deck: [],
+      players: [[], [], [], []],
+      kitty: [],
+      bids: [null, null, null, null],
+      currentBid: { score: 55, mode: 'BIG', player: -1 },
+      passCount: 0,
+      bidTurn: 0,
+      landlord: -1,
+      targetScore: 60,
+      trumpSuit: null,
+      friendCard: null,
+      friendPlayer: -1,
+      is1v3: false,
+      scores: [0, 0, 0, 0],
+      currentTrick: [],
+      leadPlayer: 0,
+      turn: 0,
+      trickHistory: [],
+      selectedCards: []
+    };
+
+    function isScoreCard(card, mode) {
+      if (mode === 'BIG') {
+        return card.rank === 'K' || card.rank === '10' || card.rank === '5';
+      } else {
+        return card.rank === '2' || card.rank === '5' || card.rank === '10';
+      }
+    }
+
+    function getCardValue(card, mode) {
+      if (mode === 'BIG') {
+        if (card.rank === 'K') return 10;
+        if (card.rank === '10') return 10;
+        if (card.rank === '5') return 5;
+      } else {
+        if (card.rank === '2') return 10;
+        if (card.rank === '5') return 10;
+        if (card.rank === '10') return 5;
+      }
+      return 0;
+    }
+
+    function getRankPower(rank, mode) {
+      if (mode === 'BIG') {
+        const order = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+        return order.indexOf(rank);
+      } else {
+        const order = ['K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3', '2', 'A'];
+        return order.indexOf(rank);
+      }
+    }
+
+    function createDeck() {
+      const deck = [];
+      for (let s of SUITS) {
+        for (let r of RANKS) {
+          deck.push({ suit: s, rank: r });
+        }
+      }
+      for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+      return deck;
+    }
+
+    function sortHand(hand, mode = gameState.gameMode) {
+      const suitOrder = { '♠': 0, '♥': 1, '♣': 2, '♦': 3 };
+      return hand.sort((a, b) => {
+        if (a.suit !== b.suit) {
+          return suitOrder[a.suit] - suitOrder[b.suit];
+        }
+        return getRankPower(b.rank, mode) - getRankPower(a.rank, mode);
+      });
+    }
+
+    function initGame() {
+      gameState.phase = 'BIDDING';
+      gameState.gameMode = 'BIG';
+      gameState.deck = createDeck();
+      gameState.players = [[], [], [], []];
+      gameState.kitty = [];
+      gameState.bids = [null, null, null, null];
+      gameState.currentBid = { score: 55, mode: 'BIG', player: -1 };
+      gameState.passCount = 0;
+      gameState.bidTurn = 0;
+      gameState.landlord = -1;
+      gameState.targetScore = 60;
+      gameState.trumpSuit = null;
+      gameState.friendCard = null;
+      gameState.friendPlayer = -1;
+      gameState.is1v3 = false;
+      gameState.scores = [0, 0, 0, 0];
+      gameState.currentTrick = [];
+      gameState.leadPlayer = 0;
+      gameState.turn = 0;
+      gameState.trickHistory = [];
+      gameState.selectedCards = [];
+
+      for (let p = 0; p < 4; p++) {
+        gameState.players[p] = gameState.deck.slice(p * 12, (p + 1) * 12);
+        sortHand(gameState.players[p], 'BIG');
+      }
+      gameState.kitty = gameState.deck.slice(48, 52);
+
+      document.getElementById('gameLogContent').innerHTML = '';
+      logMessage('🎴 牌局開始，成功發牌！所有玩家已拿到 12 張牌。');
+      
+      updateHeaderStatus();
+      resetPlayerBadges();
+      renderKitty(false);
+      renderHumanHand();
+      updatePlayerCardCounts();
+
+      showControlPanel('biddingControls', '請先看清手牌，再進行叫牌');
+      updateBidOptions();
+      
+      for (let i = 0; i < 4; i++) {
+        document.getElementById(`played-${i}`).innerHTML = '';
+      }
+    }
+
+    function updateBidOptions() {
+      const select = document.getElementById('bidScoreSelect');
+      const minScore = gameState.currentBid.score + 5;
+      select.innerHTML = '';
+      for (let s = Math.max(60, minScore); s <= 100; s += 5) {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.innerText = `${s} 分`;
+        select.appendChild(opt);
+      }
+    }
+
+    function handleHumanBid() {
+      if (gameState.phase !== 'BIDDING' || gameState.bidTurn !== 0) return;
+      const score = parseInt(document.getElementById('bidScoreSelect').value);
+      const mode = document.getElementById('bidModeSelect').value;
+      processBid(0, score, mode);
+    }
+
+    function handleHumanPass() {
+      if (gameState.phase !== 'BIDDING' || gameState.bidTurn !== 0) return;
+      processBid(0, 'PASS', null);
+    }
+
+    function processBid(playerIdx, score, mode) {
+      if (score === 'PASS') {
+        gameState.bids[playerIdx] = 'PASS';
+        gameState.passCount++;
+        logMessage(`👤 ${PLAYER_NAMES[playerIdx]} 選擇 <span class="text-gray-400 font-bold">Pass</span>`);
+        showBidBadge(playerIdx, 'Pass');
+      } else {
+        gameState.currentBid = { score, mode, player: playerIdx };
+        gameState.bids[playerIdx] = { score, mode };
+        const modeText = mode === 'BIG' ? '玩大' : '玩小';
+        logMessage(`🔥 ${PLAYER_NAMES[playerIdx]} 叫牌 <span class="text-amber-400 font-bold">${score}分 (${modeText})</span>`);
+        showBidBadge(playerIdx, `${score}分 ${modeText}`);
+      }
+
+      if (gameState.passCount >= 3 && gameState.currentBid.player !== -1) {
+        finishBidding();
+        return;
+      }
+      
+      if (gameState.passCount === 4 && gameState.currentBid.player === -1) {
+        logMessage('⚠️ 所有人皆 Pass，重新洗牌發牌！');
+        setTimeout(initGame, 1500);
+        return;
+      }
+
+      do {
+        gameState.bidTurn = (gameState.bidTurn + 1) % 4;
+      } while (gameState.bids[gameState.bidTurn] === 'PASS');
+
+      if (gameState.bidTurn !== 0) {
+        setTimeout(aiBid, 800);
+      } else {
+        updateBidOptions();
+        showControlPanel('biddingControls', `目前最高叫牌: ${gameState.currentBid.score}分 (${PLAYER_NAMES[gameState.currentBid.player]})`);
+      }
+    }
+
+    function aiBid() {
+      if (gameState.phase !== 'BIDDING') return;
+      const p = gameState.bidTurn;
+      const hand = gameState.players[p];
+      
+      let bigScorePotential = 0;
+      let smallScorePotential = 0;
+
+      hand.forEach(c => {
+        if (['A', 'K', 'Q'].includes(c.rank)) bigScorePotential += 10;
+        if (['A', '2', '3'].includes(c.rank)) smallScorePotential += 10;
+      });
+
+      const currentScore = gameState.currentBid.score;
+      let desiredScore = currentScore < 60 ? 60 : currentScore + 5;
+
+      if (desiredScore <= 80 && (bigScorePotential >= 50 || smallScorePotential >= 50)) {
+        const mode = bigScorePotential >= smallScorePotential ? 'BIG' : 'SMALL';
+        processBid(p, desiredScore, mode);
+      } else {
+        processBid(p, 'PASS', null);
+      }
+    }
+
+    function finishBidding() {
+      gameState.landlord = gameState.currentBid.player;
+      gameState.targetScore = gameState.currentBid.score;
+      gameState.gameMode = gameState.currentBid.mode;
+
+      for (let p = 0; p < 4; p++) {
+        sortHand(gameState.players[p], gameState.gameMode);
+      }
+      renderHumanHand();
+
+      const modeText = gameState.gameMode === 'BIG' ? '玩大' : '玩小';
+      logMessage(`🎉 叫牌結束！<b>${PLAYER_NAMES[gameState.landlord]}</b> 以 <b class="text-amber-400">${gameState.targetScore} 分 (${modeText})</b> 成為莊家！`);
+
+      for (let p = 0; p < 4; p++) {
+        document.getElementById(`role-${p}`).classList.toggle('hidden', p !== gameState.landlord);
+      }
+
+      updateHeaderStatus();
+
+      if (gameState.landlord === 0) {
+        startTrumpSelectionPhase();
+      } else {
+        setTimeout(aiSelectTrumpAndFriend, 1000);
+      }
+    }
+
+    function startTrumpSelectionPhase() {
+      gameState.phase = 'TRUMP_SELECTION';
+      showControlPanel('trumpFriendControls', '請選擇本局王牌花色與指定友牌');
+    }
+
+    function selectTrump(suit) {
+      gameState.trumpSuit = suit;
+      document.querySelectorAll('.trump-btn').forEach(btn => {
+        if (btn.dataset.suit === suit) {
+          btn.classList.add('ring-2', 'ring-amber-400', 'scale-105');
+        } else {
+          btn.classList.remove('ring-2', 'ring-amber-400', 'scale-105');
+        }
+      });
+    }
+
+    function confirmTrumpAndFriend() {
+      if (!gameState.trumpSuit) {
+        showPrompt('請點擊選擇王牌花色！');
+        return;
+      }
+
+      const fSuit = document.getElementById('friendSuitSelect').value;
+      const fRank = document.getElementById('friendRankSelect').value;
+      gameState.friendCard = { suit: fSuit, rank: fRank };
+
+      setupFriendAndKittyExchange();
+    }
+
+    function aiSelectTrumpAndFriend() {
+      const hand = gameState.players[gameState.landlord];
+      const suitCounts = { '♠': 0, '♥': 0, '♣': 0, '♦': 0 };
+      hand.forEach(c => suitCounts[c.suit]++);
+      
+      let bestSuit = '♠';
+      let maxCount = -1;
+      for (let s in suitCounts) {
+        if (suitCounts[s] > maxCount) {
+          maxCount = suitCounts[s];
+          bestSuit = s;
+        }
+      }
+
+      gameState.trumpSuit = bestSuit;
+      let friendRank = 'A';
+      let friendSuit = '♠';
+
+      const missingAces = SUITS.filter(s => !hand.some(c => c.suit === s && c.rank === 'A'));
+      if (missingAces.length > 0) {
+        friendSuit = missingAces[0];
+      } else {
+        friendSuit = (bestSuit === '♠') ? '♥' : '♠';
+      }
+
+      gameState.friendCard = { suit: friendSuit, rank: friendRank };
+      logMessage(`👑 莊家 ${PLAYER_NAMES[gameState.landlord]} 選擇王牌: <b class="text-amber-300">${gameState.trumpSuit}</b>，指定友牌: <b class="text-amber-300">${gameState.friendCard.suit}${gameState.friendCard.rank}</b>`);
+
+      setupFriendAndKittyExchange();
+    }
+
+    function setupFriendAndKittyExchange() {
+      gameState.friendPlayer = -1;
+      for (let p = 0; p < 4; p++) {
+        if (gameState.players[p].some(c => c.suit === gameState.friendCard.suit && c.rank === gameState.friendCard.rank)) {
+          gameState.friendPlayer = p;
+          break;
+        }
+      }
+
+      const inKitty = gameState.kitty.some(c => c.suit === gameState.friendCard.suit && c.rank === gameState.friendCard.rank);
+      if (inKitty || gameState.friendPlayer === gameState.landlord) {
+        gameState.is1v3 = true;
+        logMessage(`⚡ 友牌 <b>${gameState.friendCard.suit}${gameState.friendCard.rank}</b> 在莊家或底牌中！本局觸發 <b class="text-rose-400">1v3 (暗獨)</b> 模式！`);
+      } else {
+        gameState.is1v3 = false;
+        logMessage(`🤝 莊家已指定友牌 <b>${gameState.friendCard.suit}${gameState.friendCard.rank}</b> (持有者為秘密盟友)`);
+      }
+
+      updateHeaderStatus();
+
+      logMessage(`🃏 莊家 ${PLAYER_NAMES[gameState.landlord]} 取得 4 張底牌。`);
+      gameState.players[gameState.landlord].push(...gameState.kitty);
+      sortHand(gameState.players[gameState.landlord], gameState.gameMode);
+
+      if (gameState.landlord === 0) {
+        gameState.phase = 'EXCHANGE';
+        gameState.selectedCards = [];
+        renderKitty(true);
+        renderHumanHand();
+        showControlPanel('exchangeControls', '莊家取底牌：請選 4 張非分數牌埋入底牌');
+      } else {
+        renderKitty(false);
+        aiExchangeKitty();
+      }
+    }
+
+    function confirmExchange() {
+      if (gameState.selectedCards.length !== 4) {
+        showPrompt('請選擇恰好 4 張非分數牌埋回底牌！');
+        return;
+      }
+
+      const selectedObjs = gameState.selectedCards.map(idx => gameState.players[0][idx]);
+      const forbiddenCard = selectedObjs.find(c => isScoreCard(c, gameState.gameMode));
+      if (forbiddenCard) {
+        const scoreNames = gameState.gameMode === 'BIG' ? '5, 10, K' : '2, 5, 10';
+        showPrompt(`違規！底牌不可含有分數牌 (${forbiddenCard.suit}${forbiddenCard.rank})！(${scoreNames})`);
+        return;
+      }
+
+      gameState.kitty = selectedObjs;
+      gameState.players[0] = gameState.players[0].filter((_, idx) => !gameState.selectedCards.includes(idx));
+      gameState.selectedCards = [];
+
+      logMessage('📦 莊家 (你) 已成功選取 4 張非分數牌埋入底牌。');
+      renderKitty(false);
+      renderHumanHand();
+      updatePlayerCardCounts();
+
+      startTrickPlayingPhase();
+    }
+
+    function aiExchangeKitty() {
+      const p = gameState.landlord;
+      const hand = gameState.players[p];
+      const nonScoreCards = hand.filter(c => !isScoreCard(c, gameState.gameMode));
+      nonScoreCards.sort((a, b) => getRankPower(a.rank, gameState.gameMode) - getRankPower(b.rank, gameState.gameMode));
+
+      const discarded = nonScoreCards.slice(0, 4);
+      discarded.forEach(card => {
+        const idx = hand.indexOf(card);
+        if (idx > -1) hand.splice(idx, 1);
+      });
+
+      gameState.kitty = discarded;
+      logMessage(`📦 莊家 ${PLAYER_NAMES[p]} 完成埋底牌。`);
+      updatePlayerCardCounts();
+
+      setTimeout(startTrickPlayingPhase, 800);
+    }
+
+    function startTrickPlayingPhase() {
+      gameState.phase = 'PLAYING';
+      gameState.turn = gameState.landlord;
+      gameState.leadPlayer = gameState.landlord;
+      gameState.currentTrick = [];
+
+      logMessage('⚔️ 遊戲開始！首墩由莊家優先出牌。');
+      hideControlPanel();
+
+      if (gameState.turn === 0) {
+        prepareHumanTurn();
+      } else {
+        setTimeout(aiPlayTurn, 800);
+      }
+    }
+
+    function prepareHumanTurn() {
+      showControlPanel('playControls', `輪到你的回合！(領牌花色: ${gameState.currentTrick.length > 0 ? gameState.currentTrick[0].card.suit : '自由出牌'})`);
+      document.getElementById('btnPlaySelectedCard').disabled = (gameState.selectedCards.length !== 1);
+      renderHumanHand();
+    }
+
+    function toggleCardSelection(index) {
+      if (gameState.phase === 'EXCHANGE') {
+        const pos = gameState.selectedCards.indexOf(index);
+        if (pos > -1) {
+          gameState.selectedCards.splice(pos, 1);
+        } else {
+          if (gameState.selectedCards.length < 4) {
+            gameState.selectedCards.push(index);
+          } else {
+            showPrompt('已經選擇了 4 張牌！');
+          }
+        }
+        renderHumanHand();
+      } else if (gameState.phase === 'PLAYING') {
+        if (gameState.turn !== 0) return;
+
+        if (gameState.selectedCards.includes(index)) {
+          gameState.selectedCards = [];
+        } else {
+          gameState.selectedCards = [index];
+        }
+
+        const playBtn = document.getElementById('btnPlaySelectedCard');
+        if (playBtn) playBtn.disabled = (gameState.selectedCards.length !== 1);
+        renderHumanHand();
+      }
+    }
+
+    function playHumanSelectedCard() {
+      if (gameState.phase !== 'PLAYING' || gameState.turn !== 0) return;
+      if (gameState.selectedCards.length !== 1) return;
+
+      const cardIdx = gameState.selectedCards[0];
+      const selectedCard = gameState.players[0][cardIdx];
+
+      if (gameState.currentTrick.length > 0) {
+        const leadSuit = gameState.currentTrick[0].card.suit;
+        const hasLeadSuit = gameState.players[0].some(c => c.suit === leadSuit);
+        if (hasLeadSuit && selectedCard.suit !== leadSuit) {
+          showPrompt(`必須跟出首花色 (${leadSuit})！`);
+          return;
+        }
+      }
+
+      gameState.players[0].splice(cardIdx, 1);
+      gameState.selectedCards = [];
+      
+      executePlayCard(0, selectedCard);
+    }
+
+    function aiPlayTurn() {
+      if (gameState.phase !== 'PLAYING' || gameState.turn === 0) return;
+
+      const p = gameState.turn;
+      const hand = gameState.players[p];
+      let cardToPlay = null;
+
+      if (gameState.currentTrick.length === 0) {
+        cardToPlay = hand[0];
+      } else {
+        const leadSuit = gameState.currentTrick[0].card.suit;
+        const suitCards = hand.filter(c => c.suit === leadSuit);
+
+        if (suitCards.length > 0) {
+          cardToPlay = suitCards[0];
+        } else {
+          const trumpCards = hand.filter(c => c.suit === gameState.trumpSuit);
+          if (trumpCards.length > 0 && Math.random() > 0.5) {
+            cardToPlay = trumpCards[0];
+          } else {
+            cardToPlay = hand[hand.length - 1];
+          }
+        }
+      }
+
+      const idx = hand.indexOf(cardToPlay);
+      if (idx > -1) hand.splice(idx, 1);
+
+      executePlayCard(p, cardToPlay);
+    }
+
+    function executePlayCard(playerIdx, card) {
+      gameState.currentTrick.push({ player: playerIdx, card });
+      logMessage(`🎴 ${PLAYER_NAMES[playerIdx]} 出牌: <b class="${getSuitColorClass(card.suit)} font-bold">${card.suit}${card.rank}</b>`);
+
+      if (gameState.friendCard && card.suit === gameState.friendCard.suit && card.rank === gameState.friendCard.rank) {
+        logMessage(`✨ <b class="text-amber-400">友牌 ${card.suit}${card.rank} 現身！</b> ${PLAYER_NAMES[playerIdx]} 是莊家的秘密盟友！`);
+      }
+
+      renderPlayedCard(playerIdx, card);
+      updatePlayerCardCounts();
+
+      if (gameState.currentTrick.length < 4) {
+        gameState.turn = (gameState.turn + 1) % 4;
+        hideControlPanel();
+
+        if (gameState.turn === 0) {
+          setTimeout(prepareHumanTurn, 500);
+        } else {
+          setTimeout(aiPlayTurn, 800);
+        }
+      } else {
+        setTimeout(evaluateTrickWinner, 1200);
+      }
+    }
+
+    function evaluateTrickWinner() {
+      const leadSuit = gameState.currentTrick[0].card.suit;
+      let winningPlay = gameState.currentTrick[0];
+
+      for (let i = 1; i < gameState.currentTrick.length; i++) {
+        const current = gameState.currentTrick[i];
+        if (current.card.suit === gameState.trumpSuit && winningPlay.card.suit !== gameState.trumpSuit) {
+          winningPlay = current;
+        } else if (current.card.suit === winningPlay.card.suit) {
+          if (getRankPower(current.card.rank, gameState.gameMode) > getRankPower(winningPlay.card.rank, gameState.gameMode)) {
+            winningPlay = current;
+          }
+        }
+      }
+
+      const winner = winningPlay.player;
+      let trickPoints = 0;
+      gameState.currentTrick.forEach(p => {
+        trickPoints += getCardValue(p.card, gameState.gameMode);
+      });
+
+      gameState.scores[winner] += trickPoints;
+      logMessage(`🏆 <b>${PLAYER_NAMES[winner]}</b> 贏得此墩！獲得 <b class="text-amber-400">+${trickPoints} 分</b>`);
+
+      for (let i = 0; i < 4; i++) {
+        document.getElementById(`played-${i}`).innerHTML = '';
+      }
+      gameState.currentTrick = [];
+
+      updateScoresUI();
+
+      if (gameState.players[0].length === 0) {
+        finishGame();
+      } else {
+        gameState.turn = winner;
+        gameState.leadPlayer = winner;
+
+        if (gameState.turn === 0) {
+          prepareHumanTurn();
+        } else {
+          hideControlPanel();
+          setTimeout(aiPlayTurn, 800);
+        }
+      }
+    }
+
+    function finishGame() {
+      gameState.phase = 'GAME_OVER';
+
+      let landlordTeamScore = 0;
+      let defenderTeamScore = 0;
+
+      for (let p = 0; p < 4; p++) {
+        if (p === gameState.landlord || (!gameState.is1v3 && p === gameState.friendPlayer)) {
+          landlordTeamScore += gameState.scores[p];
+        } else {
+          defenderTeamScore += gameState.scores[p];
+        }
+      }
+
+      const target = gameState.targetScore;
+      const isSuccess = landlordTeamScore >= target;
+
+      logMessage('========================================');
+      logMessage(`🏁 <b>牌局結束！</b> 莊家隊吃分: <b class="text-amber-400">${landlordTeamScore} 分</b> (目標: ${target} 分)`);
+
+      let title = isSuccess ? '🎉 莊家隊 勝利！' : '💥 抓莊成功！反方隊 勝利！';
+      let resultDetail = `莊家獲得 ${landlordTeamScore} 分，喊分目標為 ${target} 分。`;
+
+      if (gameState.is1v3) {
+        resultDetail += ' (本局為 1v3 暗獨對決)';
+      }
+
+      showControlPanel(null, `${title} - ${resultDetail}`);
+      renderKitty(true);
+    }
+
+    function getSuitColorClass(suit) {
+      return (suit === '♥' || suit === '♦') ? 'suit-heart' : 'suit-spade';
+    }
+
+    function renderHumanHand() {
+      const container = document.getElementById('humanHand');
+      if (!container) return;
+
+      container.innerHTML = '';
+      const hand = gameState.players[0] || [];
+
+      if (hand.length === 0) {
+        container.innerHTML = '<span class="text-xs text-emerald-300/60 self-center mx-auto">已無手牌</span>';
+        return;
+      }
+
+      const numCards = hand.length;
+      let cardWidthPx = 58;
+      let overlapPx = 32;
+
+      if (window.innerWidth < 640) {
+        cardWidthPx = 46;
+        overlapPx = numCards > 12 ? 28 : 22;
+      } else {
+        cardWidthPx = numCards > 12 ? 56 : 64;
+        overlapPx = numCards > 12 ? 36 : 30;
+      }
+
+      hand.forEach((card, idx) => {
+        const isSelected = gameState.selectedCards.includes(idx);
+        
+        const cardDiv = document.createElement('div');
+        cardDiv.className = `poker-card relative bg-white rounded-lg p-1.5 flex flex-col justify-between cursor-pointer shadow-md select-none border border-slate-300 flex-shrink-0 ${isSelected ? 'selected' : ''}`;
+        
+        cardDiv.style.width = `${cardWidthPx}px`;
+        cardDiv.style.height = `${Math.round(cardWidthPx * 1.45)}px`;
+
+        if (idx > 0) {
+          cardDiv.style.marginLeft = `-${overlapPx}px`;
+        } else {
+          cardDiv.style.marginLeft = '0px';
+        }
+
+        cardDiv.style.zIndex = isSelected ? 80 : idx + 1;
+
+        const isRed = (card.suit === '♥' || card.suit === '♦');
+        const colorClass = isRed ? 'text-red-600' : 'text-slate-900';
+        const isPoint = isScoreCard(card, gameState.gameMode);
+
+        cardDiv.onclick = () => toggleCardSelection(idx);
+
+        cardDiv.innerHTML = `
+          <div class="flex justify-between items-center leading-none">
+            <span class="font-extrabold text-xs sm:text-sm ${colorClass}">${card.rank}</span>
+            <span class="text-[10px] sm:text-xs ${colorClass}">${card.suit}</span>
+          </div>
+          <div class="text-center text-base sm:text-xl my-auto ${colorClass}">
+            ${card.suit}
+          </div>
+          <div class="flex justify-between items-end leading-none">
+            ${isPoint ? `<span class="text-[8px] sm:text-[9px] bg-amber-400 text-slate-950 font-black px-1 rounded transform scale-75 -ml-1">分</span>` : '<span></span>'}
+            <span class="font-extrabold text-xs sm:text-sm ${colorClass}">${card.rank}</span>
+          </div>
+        `;
+
+        container.appendChild(cardDiv);
+      });
+    }
+
+    function renderPlayedCard(playerIdx, card) {
+      const targetSlot = document.getElementById(`played-${playerIdx}`);
+      if (!targetSlot) return;
+
+      const isRed = (card.suit === '♥' || card.suit === '♦');
+      const colorClass = isRed ? 'text-red-600' : 'text-slate-900';
+
+      targetSlot.innerHTML = `
+        <div class="poker-card bg-white rounded-lg p-1.5 w-12 h-18 sm:w-16 sm:h-24 flex flex-col justify-between shadow-2xl border border-slate-300 animate-bounce">
+          <div class="flex justify-between items-center leading-none">
+            <span class="font-extrabold text-xs sm:text-sm ${colorClass}">${card.rank}</span>
+            <span class="text-xs ${colorClass}">${card.suit}</span>
+          </div>
+          <div class="text-center text-lg sm:text-2xl ${colorClass}">${card.suit}</div>
+          <div class="text-right leading-none">
+            <span class="font-extrabold text-xs sm:text-sm ${colorClass}">${card.rank}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderKitty(reveal = false) {
+      const container = document.getElementById('kittyCardsContainer');
+      if (!container) return;
+
+      container.innerHTML = '';
+      const cards = gameState.kitty || [];
+
+      cards.forEach(card => {
+        const cardDiv = document.createElement('div');
+        if (reveal) {
+          const isRed = (card.suit === '♥' || card.suit === '♦');
+          const colorClass = isRed ? 'text-red-600' : 'text-slate-900';
+          cardDiv.className = 'w-7 h-10 sm:w-9 sm:h-12 bg-white rounded border border-slate-300 flex flex-col justify-between p-0.5 shadow';
+          cardDiv.innerHTML = `
+            <span class="text-[10px] font-bold leading-none ${colorClass}">${card.rank}</span>
+            <span class="text-xs text-center ${colorClass}">${card.suit}</span>
+          `;
+        } else {
+          cardDiv.className = 'w-7 h-10 sm:w-9 sm:h-12 bg-gradient-to-br from-blue-900 to-indigo-950 rounded border border-indigo-500/50 flex items-center justify-center shadow';
+          cardDiv.innerHTML = `<i class="fa-solid fa-shield-halved text-indigo-400/50 text-xs"></i>`;
+        }
+        container.appendChild(cardDiv);
+      });
+    }
+
+    function updatePlayerCardCounts() {
+      for (let p = 0; p < 4; p++) {
+        const el = document.getElementById(`cardCount-${p}`);
+        if (el) el.innerText = gameState.players[p].length;
+      }
+    }
+
+    function updateScoresUI() {
+      for (let p = 0; p < 4; p++) {
+        const el = document.getElementById(`score-${p}`);
+        if (el) el.innerText = gameState.scores[p];
+      }
+    }
+
+    function showBidBadge(playerIdx, text) {
+      const badge = document.getElementById(`bidBadge-${playerIdx}`);
+      if (badge) {
+        badge.innerText = text;
+        badge.classList.remove('hidden');
+      }
+    }
+
+    function resetPlayerBadges() {
+      for (let p = 0; p < 4; p++) {
+        const badge = document.getElementById(`bidBadge-${p}`);
+        if (badge) badge.classList.add('hidden');
+        document.getElementById(`role-${p}`).classList.add('hidden');
+        document.getElementById(`score-${p}`).innerText = '0';
+      }
+    }
+
+    function updateHeaderStatus() {
+      const modeBadge = document.getElementById('gameModeBadge');
+      if (modeBadge) {
+        modeBadge.innerText = gameState.gameMode === 'BIG' ? '玩大 (K,10,5)' : '玩小 (2,5,10)';
+        modeBadge.classList.remove('hidden');
+      }
+
+      if (gameState.trumpSuit) {
+        document.getElementById('trumpDisplay').classList.remove('hidden');
+        document.getElementById('trumpDisplay').classList.add('flex');
+        const icon = document.getElementById('trumpSuitIcon');
+        icon.innerText = gameState.trumpSuit;
+        
+        if (gameState.trumpSuit === '♠' || gameState.trumpSuit === '♣') {
+          icon.className = 'text-base font-black px-2.5 py-0.5 rounded-full suit-badge-black';
+        } else if (gameState.trumpSuit === '♥' || gameState.trumpSuit === '♦') {
+          icon.className = 'text-base font-black px-2.5 py-0.5 rounded-full suit-badge-red';
+        } else {
+          icon.className = 'text-xs font-bold text-amber-300 bg-slate-800 px-2 py-0.5 rounded-full';
+        }
+      } else {
+        document.getElementById('trumpDisplay').classList.add('hidden');
+      }
+
+      if (gameState.friendCard) {
+        document.getElementById('friendDisplay').classList.remove('hidden');
+        document.getElementById('friendDisplay').classList.add('flex');
+        document.getElementById('friendCardText').innerText = `${gameState.friendCard.suit}${gameState.friendCard.rank}`;
+      } else {
+        document.getElementById('friendDisplay').classList.add('hidden');
+      }
+
+      if (gameState.targetScore) {
+        document.getElementById('targetScoreDisplay').classList.remove('hidden');
+        document.getElementById('targetScoreDisplay').classList.add('flex');
+        document.getElementById('targetScoreText').innerText = gameState.targetScore;
+      }
+    }
+
+    function showControlPanel(activeSubId, promptTitle) {
+      const panel = document.getElementById('controlPanel');
+      panel.classList.remove('hidden');
+
+      document.getElementById('controlTitle').innerText = promptTitle || '';
+
+      ['biddingControls', 'trumpFriendControls', 'exchangeControls', 'playControls'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          if (id === activeSubId) {
+            el.classList.remove('hidden');
+            el.classList.add('flex');
+          } else {
+            el.classList.add('hidden');
+            el.classList.remove('flex');
+          }
+        }
+      });
+    }
+
+    function hideControlPanel() {
+      const panel = document.getElementById('controlPanel');
+      if (panel) panel.classList.add('hidden');
+    }
+
+    function showPrompt(text) {
+      const box = document.getElementById('centerPrompt');
+      const textEl = document.getElementById('centerPromptText');
+      if (!box || !textEl) return;
+
+      textEl.innerText = text;
+      box.classList.remove('hidden');
+      setTimeout(() => {
+        box.classList.add('hidden');
+      }, 2000);
+    }
+
+    function logMessage(msg) {
+      const logBox = document.getElementById('gameLogContent');
+      if (!logBox) return;
+
+      const p = document.createElement('div');
+      p.className = 'border-b border-slate-800/60 pb-1';
+      p.innerHTML = msg;
+      logBox.appendChild(p);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function toggleLogModal() {
+      const modal = document.getElementById('logModal');
+      modal.classList.toggle('hidden');
+    }
+
+    function toggleRulesModal() {
+      const modal = document.getElementById('rulesModal');
+      modal.classList.toggle('hidden');
+    }
+
+    function resetGamePrompt() {
+      if (confirm('確定要結束當前對局並開始新局嗎？')) {
+        initGame();
+      }
+    }
+
+    window.onload = function() {
+      initGame();
+    };
+  </script>
+</body>
+</html>
